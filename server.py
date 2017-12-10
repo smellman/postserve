@@ -17,6 +17,8 @@ import yaml
 import sys
 import itertools
 
+import gzip
+
 def GetTM2Source(file):
     with open(file,'r') as stream:
         tm2source = yaml.load(stream)
@@ -42,6 +44,8 @@ inspector = inspect(engine)
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
 session.execute(prepared)
+
+gziped = os.getenv('GZIP') == 'true'
 
 def bounds(zoom,x,y):
     inProj = pyproj.Proj(init='epsg:4326')
@@ -81,6 +85,8 @@ def get_mvt(zoom,x,y):
     final_tile = b''
     for layer in layers:
         final_tile = final_tile + io.BytesIO(layer).getvalue() 
+    if gziped:
+        final_tile = gzip.compress(final_tile)
     return final_tile
 
 class GetTile(tornado.web.RequestHandler):
