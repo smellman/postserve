@@ -26,10 +26,11 @@ def GeneratePrepared(layers):
     queries = []
     prepared = "PREPARE gettile(geometry, numeric, numeric, numeric) AS "
     for layer in layers['Layer']:
+        buffer_size = str(layer['properties']['buffer-size'])
         layer_query = layer['Datasource']['table'].lstrip().rstrip()	# Remove lead and trailing whitespace
         layer_query = layer_query[1:len(layer_query)-6]			# Remove enough characters to remove first and last () and "AS t"
-        layer_query = layer_query.replace("geometry", "ST_AsMVTGeom(geometry,!bbox!,4096,0,true) AS mvtgeometry")
-        base_query = "SELECT ST_ASMVT(tile, '"+layer['id']+"', 4096, 'mvtgeometry') FROM ("+layer_query+" WHERE ST_AsMVTGeom(geometry, !bbox!,4096,0,true) IS NOT NULL) AS tile"
+        layer_query = layer_query.replace("geometry", f"ST_AsMVTGeom(geometry,!bbox!,4096,{buffer_size},true) AS mvtgeometry")
+        base_query = f"SELECT ST_ASMVT(tile, '{layer['id']}', 4096, 'mvtgeometry') FROM ({layer_query} WHERE ST_AsMVTGeom(geometry, !bbox!,4096,{buffer_size},true) IS NOT NULL) AS tile"
         queries.append(base_query.replace("!bbox!","$1").replace("!scale_denominator!","$2").replace("!pixel_width!","$3").replace("!pixel_height!","$4"))
     prepared = prepared + " UNION ALL ".join(queries) + ";"
     print(prepared)

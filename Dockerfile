@@ -4,7 +4,8 @@ WORKDIR /usr/src/app
 
 VOLUME /mapping
 
-COPY . /usr/src/app/
+COPY requirements.txt /usr/src/app/
 RUN pip install --no-cache-dir -r requirements.txt
+COPY server.py /usr/src/app/
 
 CMD ["python", "-u","/usr/src/app/server.py"]
