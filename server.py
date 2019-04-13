@@ -22,27 +22,27 @@ def GetTM2Source(file):
         tm2source = yaml.load(stream)
     return tm2source
 
-def GeneratePrepared(layers):
+def GenerateBaseQuery(layers):
     queries = []
-    prepared = "PREPARE gettile(geometry, numeric, numeric, numeric) AS "
+    query = ""
     for layer in layers['Layer']:
         buffer_size = str(layer['properties']['buffer-size'])
         layer_query = layer['Datasource']['table'].lstrip().rstrip()	# Remove lead and trailing whitespace
         layer_query = layer_query[1:len(layer_query)-6]			# Remove enough characters to remove first and last () and "AS t"
         layer_query = layer_query.replace("geometry", f"ST_AsMVTGeom(geometry,!bbox!,4096,{buffer_size},true) AS mvtgeometry")
         base_query = f"SELECT ST_ASMVT(tile, '{layer['id']}', 4096, 'mvtgeometry') FROM ({layer_query} WHERE ST_AsMVTGeom(geometry, !bbox!,4096,{buffer_size},true) IS NOT NULL) AS tile"
-        queries.append(base_query.replace("!bbox!","$1").replace("!scale_denominator!","$2").replace("!pixel_width!","$3").replace("!pixel_height!","$4"))
-    prepared = prepared + " UNION ALL ".join(queries) + ";"
-    print(prepared)
-    return(prepared)
+        queries.append(base_query)
+    query = query + " UNION ALL ".join(queries) + ";"
+    print(query)
+    return(query)
 
 layers = GetTM2Source("/mapping/data.yml")
-prepared = GeneratePrepared(layers)
+base_query = GenerateBaseQuery(layers)
 engine = create_engine('postgresql://'+os.getenv('POSTGRES_USER','openmaptiles')+':'+os.getenv('POSTGRES_PASSWORD','openmaptiles')+'@'+os.getenv('POSTGRES_HOST','postgres')+':'+os.getenv('POSTGRES_PORT','5432')+'/'+os.getenv('POSTGRES_DB','openmaptiles'))
 inspector = inspect(engine)
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
-session.execute(prepared)
+#session.execute(prepared)
 
 def bounds(zoom,x,y):
     inProj = pyproj.Proj(init='epsg:4326')
@@ -74,10 +74,9 @@ def get_mvt(zoom,x,y):
     scale_denom = zoom_to_scale_denom(sani_zoom)
     tilebounds = bounds(sani_zoom,sani_x,sani_y)
     s,w,n,e = str(tilebounds['s']),str(tilebounds['w']),str(tilebounds['n']),str(tilebounds['e'])
-    final_query = "EXECUTE gettile(!bbox!, !scale_denominator!, !pixel_width!, !pixel_height!);"
-    sent_query = replace_tokens(final_query,s,w,n,e,scale_denom)
-    response = list(session.execute(sent_query))
+    sent_query = replace_tokens(base_query,s,w,n,e,scale_denom)
     print(sent_query)
+    response = list(session.execute(sent_query))
     layers = filter(None,list(itertools.chain.from_iterable(response)))
     final_tile = b''
     for layer in layers:
