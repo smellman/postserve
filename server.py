@@ -1,5 +1,6 @@
 import tornado.ioloop
 import tornado.web
+from tornado import httputil
 import io
 import os
 
@@ -33,7 +34,6 @@ def GenerateBaseQuery(layers):
         base_query = f"SELECT ST_ASMVT(tile, '{layer['id']}', 4096, 'mvtgeometry') FROM ({layer_query} WHERE ST_AsMVTGeom(geometry, !bbox!,4096,{buffer_size},true) IS NOT NULL) AS tile"
         queries.append(base_query)
     query = query + " UNION ALL ".join(queries) + ";"
-    print(query)
     return(query)
 
 layers = GetTM2Source("/mapping/data.yml")
@@ -75,11 +75,10 @@ def get_mvt(zoom,x,y):
     tilebounds = bounds(sani_zoom,sani_x,sani_y)
     s,w,n,e = str(tilebounds['s']),str(tilebounds['w']),str(tilebounds['n']),str(tilebounds['e'])
     sent_query = replace_tokens(base_query,s,w,n,e,scale_denom)
-    print(sent_query)
     response = list(session.execute(sent_query))
-    layers = filter(None,list(itertools.chain.from_iterable(response)))
+    _layers = filter(None,list(itertools.chain.from_iterable(response)))
     final_tile = b''
-    for layer in layers:
+    for layer in _layers:
         final_tile = final_tile + io.BytesIO(layer).getvalue()
     return final_tile
 
@@ -88,13 +87,23 @@ class GetTile(tornado.web.RequestHandler):
         self.set_header("Content-Type", "application/x-protobuf")
         self.set_header("Content-Disposition", "attachment")
         self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Cache-Control", "private")
         response = get_mvt(zoom,x,y)
         self.write(response)
+
+class HealthCheck(tornado.web.RequestHandler):
+    def get(self):
+        self.write("OK")
 
 def m():
     if __name__ == "__main__":
         # Make this prepared statement from the tm2source
-        application = tornado.web.Application([(r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf", GetTile)])
+        application = tornado.web.Application(
+            [
+                (r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf", GetTile),
+                ("/healthcheck", HealthCheck)
+            ]
+        )
         print("Postserve started..")
         application.listen(8080)
         tornado.ioloop.IOLoop.current().start()
